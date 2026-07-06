@@ -1,0 +1,4 @@
+feed:
+  instrument: BTC-PERPETUAL
+recorder:
+  data_dir: data
