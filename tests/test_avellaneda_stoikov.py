@@ -6,14 +6,15 @@ from mm_bot.strategy.avellaneda_stoikov import AvellanedaStoikovStrategy
 
 
 def make_strat(**over):
-    cfg = StrategyConfig(
+    params = dict(
         kind="avellaneda_stoikov", name="as", half_spread_usd=5.0,
         quote_size_usd=100.0, tick_size=0.5,
         gamma=0.01, horizon_s=60.0,
         vol_lambda=0.5, vol_min_dt_s=1.0, vol_min_samples=3,
-        k_window_s=3600.0, k_min_trades=3, **over,
+        k_window_s=3600.0, k_min_trades=3,
     )
-    return AvellanedaStoikovStrategy(cfg)
+    params.update(over)
+    return AvellanedaStoikovStrategy(StrategyConfig(**params))
 
 
 def warm_up(strat, mid=60000.0):
