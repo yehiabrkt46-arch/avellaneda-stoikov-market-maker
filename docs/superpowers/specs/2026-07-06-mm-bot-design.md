@@ -67,7 +67,10 @@ strategy/
   - k: order-flow intensity parameter, calibrated from observed trade arrival rate as a
     function of distance from mid (exponential decay fit), recalibrated on a rolling
     window.
-  - Horizon handling: rolling/restarting horizon (session-based T), documented in code.
+  - Horizon handling: constant time-to-horizon tau (stationary approximation),
+    amended 2026-07-06 during milestone 3. Rationale: a perpetual contract has no
+    terminal time, so the textbook shrinking (T - t) would force artificial
+    end-of-session inventory dumping and quote-width pulsing. Documented in code.
 
 risk/
 - Hard inventory cap: quotes on the loaded side are pulled when |q| exceeds the cap.
