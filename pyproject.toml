@@ -18,7 +18,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["mm_bot", "mm_bot.feed", "mm_bot.paper", "mm_bot.strategy", "mm_bot.store"]
+packages = ["mm_bot", "mm_bot.feed", "mm_bot.paper", "mm_bot.strategy", "mm_bot.store", "mm_bot.exec_testnet"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
