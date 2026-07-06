@@ -21,9 +21,28 @@ class RecorderConfig:
 
 
 @dataclass(frozen=True)
+class StrategyConfig:
+    kind: str = "fixed_spread"
+    name: str = "fixed_spread"
+    half_spread_usd: float = 5.0
+    quote_size_usd: float = 100.0
+    tick_size: float = 0.5
+    requote_interval_s: float = 1.0
+
+
+@dataclass(frozen=True)
+class StoreConfig:
+    db_path: str = "data/mm.sqlite"
+    rollup_interval_s: int = 60
+    adverse_horizon_s: float = 5.0
+
+
+@dataclass(frozen=True)
 class Config:
     feed: FeedConfig
     recorder: RecorderConfig
+    strategies: tuple[StrategyConfig, ...]
+    store: StoreConfig
 
 
 def load_config(path: str | Path) -> Config:
@@ -31,4 +50,8 @@ def load_config(path: str | Path) -> Config:
     return Config(
         feed=FeedConfig(**raw.get("feed", {})),
         recorder=RecorderConfig(**raw.get("recorder", {})),
+        strategies=tuple(
+            StrategyConfig(**s) for s in raw.get("strategies", [{}])
+        ),
+        store=StoreConfig(**raw.get("store", {})),
     )

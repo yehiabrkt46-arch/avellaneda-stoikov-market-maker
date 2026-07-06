@@ -2,3 +2,10 @@ feed:
   instrument: BTC-PERPETUAL
 recorder:
   data_dir: data
+strategies:
+  - kind: fixed_spread
+    name: fixed_spread
+    half_spread_usd: 5.0
+    quote_size_usd: 100.0
+store:
+  db_path: data/mm.sqlite
