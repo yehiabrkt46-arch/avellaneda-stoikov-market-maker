@@ -44,7 +44,7 @@ feed/
   change_id/prev_change_id chain; on gap, discards book and refetches a full snapshot.
 - Reconnect on drop with exponential backoff plus jitter. Handles Deribit
   heartbeat/test_request messages.
-- Raw message recorder (append-only JSONL or SQLite) for replay testing.
+- Raw message recorder (append-only JSONL, one file per session) for replay testing.
 
 sim/
 - Fill simulator. Strategy registers desired bid/ask quotes; simulator watches the real
@@ -73,14 +73,15 @@ risk/
 - Hard inventory cap: quotes on the loaded side are pulled when |q| exceeds the cap.
 - Drawdown kill switch: bot stops quoting and flattens (in sim) past a configured max
   drawdown.
-- Stale-data watchdog: if no market data message arrives for N seconds, all quotes are
-  pulled until the feed recovers.
+- Stale-data watchdog: if no market data message arrives for N seconds (default 10,
+  configurable), all quotes are pulled until the feed recovers.
 
 metrics/
 - Realized P&L and mark-to-mid unrealized P&L.
 - Fill count, quote count, quote-to-fill ratio.
 - Inventory time series and inventory variance.
-- Adverse selection per fill: mid(t_fill + K seconds) minus fill price, signed by side.
+- Adverse selection per fill: mid(t_fill + K seconds) minus fill price, signed by side
+  (default K = 5, configurable).
 - Periodic rollups persisted to storage.
 
 store/
