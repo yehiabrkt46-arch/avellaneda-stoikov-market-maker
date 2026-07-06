@@ -28,6 +28,13 @@ class StrategyConfig:
     quote_size_usd: float = 100.0
     tick_size: float = 0.5
     requote_interval_s: float = 1.0
+    gamma: float = 0.001
+    horizon_s: float = 60.0
+    vol_lambda: float = 0.97
+    vol_min_dt_s: float = 1.0
+    vol_min_samples: int = 30
+    k_window_s: float = 1800.0
+    k_min_trades: int = 50
 
 
 @dataclass(frozen=True)

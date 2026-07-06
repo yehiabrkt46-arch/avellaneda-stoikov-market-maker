@@ -56,3 +56,16 @@ def test_load_config_multiple_strategies(tmp_path):
     assert [s.name for s in cfg.strategies] == ["base", "wide"]
     assert cfg.strategies[1].half_spread_usd == 12.0
     assert cfg.store.db_path == "other.sqlite"
+
+
+def test_strategy_config_as_fields_default(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text("")
+    s = load_config(p).strategies[0]
+    assert s.gamma == 0.001
+    assert s.horizon_s == 60.0
+    assert s.vol_lambda == 0.97
+    assert s.vol_min_dt_s == 1.0
+    assert s.vol_min_samples == 30
+    assert s.k_window_s == 1800.0
+    assert s.k_min_trades == 50
