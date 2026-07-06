@@ -1,10 +1,10 @@
 # mm_bot/strategy/fixed_spread.py
 """Baseline: symmetric quotes at a fixed half-spread around mid."""
 from mm_bot.config import StrategyConfig
-from mm_bot.strategy.base import QuotePair, round_to_tick
+from mm_bot.strategy.base import QuotePair, Strategy, round_to_tick
 
 
-class FixedSpreadStrategy:
+class FixedSpreadStrategy(Strategy):
     def __init__(self, cfg: StrategyConfig) -> None:
         self._cfg = cfg
         self.name = cfg.name

@@ -47,6 +47,7 @@ class StrategyLane:
         )
 
     def on_mid(self, mid: float, ts_ms: int) -> None:
+        self.strategy.observe_mid(mid, ts_ms)
         self._current_mid = mid
         self.adverse.on_mid(mid, ts_ms)
         interval_ms = int(self.cfg.requote_interval_s * 1000)
@@ -63,6 +64,7 @@ class StrategyLane:
     def on_trade(self, trade: Trade) -> None:
         if self._current_mid is None:
             return  # book not ready; never fill blind
+        self.strategy.observe_trade(trade.price, trade.timestamp_ms)
         self.sim.on_trade(trade)
 
     def rollup(self, ts_ms: int, mid: float) -> None:
