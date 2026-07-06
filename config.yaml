@@ -7,5 +7,11 @@ strategies:
     name: fixed_spread
     half_spread_usd: 5.0
     quote_size_usd: 100.0
+  - kind: avellaneda_stoikov
+    name: avellaneda_stoikov
+    half_spread_usd: 5.0
+    quote_size_usd: 100.0
+    gamma: 0.001
+    horizon_s: 60.0
 store:
   db_path: data/mm.sqlite

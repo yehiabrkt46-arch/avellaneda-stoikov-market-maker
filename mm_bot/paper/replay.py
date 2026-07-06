@@ -9,12 +9,15 @@ from mm_bot.feed.book import GapError, OrderBook
 from mm_bot.feed.messages import BookChange, BookSnapshot, parse_message
 from mm_bot.paper.engine import PaperEngine, StrategyLane
 from mm_bot.store.db import Store
+from mm_bot.strategy.avellaneda_stoikov import AvellanedaStoikovStrategy
 from mm_bot.strategy.fixed_spread import FixedSpreadStrategy
 
 
 def build_strategy(cfg: StrategyConfig):
     if cfg.kind == "fixed_spread":
         return FixedSpreadStrategy(cfg)
+    if cfg.kind == "avellaneda_stoikov":
+        return AvellanedaStoikovStrategy(cfg)
     raise ValueError(f"unknown strategy kind: {cfg.kind}")
 
 
