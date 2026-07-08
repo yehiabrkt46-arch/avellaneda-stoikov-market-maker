@@ -44,6 +44,7 @@ class StoreConfig:
     db_path: str = "data/mm.sqlite"
     rollup_interval_s: int = 60
     adverse_horizon_s: float = 5.0
+    stale_quote_pull_s: float = 10.0
 
 
 @dataclass(frozen=True)

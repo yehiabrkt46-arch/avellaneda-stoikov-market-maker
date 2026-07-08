@@ -140,3 +140,35 @@ async def test_kill_switch_stops_quoting_via_lane(tmp_path):
     await apply(engine, snapshot(ts=1_002_000, change_id=1002, bid=60000.0, ask=60000.5))
     assert lane.sim.bid is None
     assert lane.sim.ask is None
+
+
+async def test_trade_after_stale_gap_does_not_fill_pre_gap_quote(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))  # quotes bid 59995.0 / ask 60005.5
+    assert lane.sim.bid == (59995.0, 100.0)
+    # > 10s gap (default stale_quote_pull_ms) before this trade arrives
+    await engine.on_event(trade_ev(ts=1_011_001, price=59990.0))
+    assert lane.portfolio.fill_count == 0  # pre-gap quote must not fill
+    assert lane.sim.bid is None  # cleared by the stale pull
+    row = store.connection.execute("SELECT kind FROM events").fetchone()
+    assert row[0] == "stale_pull"
+
+
+async def test_trade_within_gap_threshold_still_fills(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await engine.on_event(trade_ev(ts=1_009_999, price=59990.0))  # 10s gap, not > 10s
+    assert lane.portfolio.fill_count == 1
+    assert store.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+
+async def test_stale_gap_pulls_quotes_before_book_event_processed(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await apply(engine, snapshot(ts=1_020_000, change_id=1001, bid=59000.0, ask=59000.5))
+    kinds = [
+        r[0] for r in store.connection.execute("SELECT kind FROM events ORDER BY id").fetchall()
+    ]
+    assert "stale_pull" in kinds
+    # the stale pull happened, then normal processing requoted at the new mid
+    assert lane.sim.bid == (58995.0, 100.0)

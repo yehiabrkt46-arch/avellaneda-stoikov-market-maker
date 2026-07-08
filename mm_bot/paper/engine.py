@@ -80,6 +80,11 @@ class StrategyLane:
         self.strategy.observe_trade(trade.price, trade.timestamp_ms)
         self.sim.on_trade(trade)
 
+    def pull_stale_quotes(self, ts_ms: int) -> None:
+        """Clear resting sim quotes after a feed gap so a stale price can't fill."""
+        self.sim.set_quotes(None, None, 0)
+        self._store.record_event(self._session_id, ts_ms, self.strategy.name, "stale_pull", None)
+
     def rollup(self, ts_ms: int, mid: float) -> None:
         self._store.record_rollup(
             self._session_id, ts_ms, self.strategy.name,
@@ -97,15 +102,22 @@ class PaperEngine:
     def __init__(
         self, book: OrderBook, lanes: list[StrategyLane], store: Store,
         session_id: str, rollup_interval_ms: int = 60_000,
+        stale_quote_pull_ms: int = 10_000,
     ) -> None:
         self._book = book
         self.lanes = lanes
         self._store = store
         self._session_id = session_id
         self._rollup_interval_ms = rollup_interval_ms
+        self._stale_quote_pull_ms = stale_quote_pull_ms
         self._last_rollup_ms: int | None = None
+        self.last_event_ts: int | None = None
 
     async def on_event(self, event) -> None:
+        ts_ms = getattr(event, "timestamp_ms", None)
+        if ts_ms is not None:
+            self._maybe_pull_stale_quotes(ts_ms)
+            self.last_event_ts = ts_ms
         match event:
             case BookSnapshot() | BookChange():
                 # in live mode the feed client has already applied the event
@@ -120,6 +132,13 @@ class PaperEngine:
             case Trade():
                 for lane in self.lanes:
                     lane.on_trade(event)
+
+    def _maybe_pull_stale_quotes(self, ts_ms: int) -> None:
+        if self.last_event_ts is None:
+            return
+        if ts_ms - self.last_event_ts > self._stale_quote_pull_ms:
+            for lane in self.lanes:
+                lane.pull_stale_quotes(ts_ms)
 
     def apply_book_event(self, event) -> None:
         """Replay helper: apply a book event when no feed client owns the book."""

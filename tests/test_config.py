@@ -42,6 +42,9 @@ def test_load_config_strategy_and_store_defaults(tmp_path):
     assert cfg.store.db_path == "data/mm.sqlite"
     assert cfg.store.rollup_interval_s == 60
     assert cfg.store.adverse_horizon_s == 5.0
+    assert cfg.store.stale_quote_pull_s == 10.0
+    assert s.inventory_cap_usd == 500.0
+    assert s.max_drawdown_usd == 100.0
 
 
 def test_load_config_multiple_strategies(tmp_path):
