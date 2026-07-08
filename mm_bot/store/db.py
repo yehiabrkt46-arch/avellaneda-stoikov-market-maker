@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS rollups (
     fill_count INTEGER NOT NULL,
     quote_count INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    ts_ms INTEGER NOT NULL,
+    strategy TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT
+);
 """
 
 
@@ -106,6 +114,16 @@ class Store:
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (session_id, ts_ms, strategy, position_usd, btc_cash, equity_btc,
              equity_usd, mid, fill_count, quote_count),
+        )
+        self.connection.commit()
+
+    def record_event(
+        self, session_id: str, ts_ms: int, strategy: str, kind: str, detail: str | None = None,
+    ) -> None:
+        self.connection.execute(
+            "INSERT INTO events (session_id, ts_ms, strategy, kind, detail)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (session_id, ts_ms, strategy, kind, detail),
         )
         self.connection.commit()
 

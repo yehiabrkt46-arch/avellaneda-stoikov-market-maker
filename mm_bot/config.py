@@ -35,6 +35,8 @@ class StrategyConfig:
     vol_min_samples: int = 30
     k_window_s: float = 1800.0
     k_min_trades: int = 50
+    inventory_cap_usd: float = 500.0
+    max_drawdown_usd: float = 100.0
 
 
 @dataclass(frozen=True)

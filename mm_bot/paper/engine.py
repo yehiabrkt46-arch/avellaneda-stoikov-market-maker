@@ -13,7 +13,9 @@ from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
 from mm_bot.paper.adverse import AdverseSelectionTracker
 from mm_bot.paper.portfolio import Portfolio
 from mm_bot.paper.sim import FillSimulator
+from mm_bot.risk import RiskManager
 from mm_bot.store.db import Store
+from mm_bot.strategy.base import QuotePair
 
 log = logging.getLogger(__name__)
 
@@ -28,11 +30,15 @@ class StrategyLane:
         self.portfolio = Portfolio()
         self.sim = FillSimulator(self._handle_fill)
         self.adverse = AdverseSelectionTracker(adverse_horizon_ms, store.set_adverse)
+        self.risk = RiskManager(cfg, self._record_risk_event)
         self.quote_count = 0
         self.last_quote_ms: int | None = None
         self._store = store
         self._session_id = session_id
         self._current_mid: float | None = None
+
+    def _record_risk_event(self, kind: str, detail: str, ts_ms: int) -> None:
+        self._store.record_event(self._session_id, ts_ms, self.strategy.name, kind, detail)
 
     def _handle_fill(self, fill) -> None:
         self.portfolio.apply_fill(fill)
@@ -52,7 +58,14 @@ class StrategyLane:
         self.adverse.on_mid(mid, ts_ms)
         interval_ms = int(self.cfg.requote_interval_s * 1000)
         if self.last_quote_ms is None or ts_ms - self.last_quote_ms >= interval_ms:
-            q = self.strategy.quotes(mid, self.portfolio.position_usd, ts_ms)
+            if self.risk.killed:
+                q = QuotePair(bid=None, ask=None)
+            else:
+                q = self.strategy.quotes(mid, self.portfolio.position_usd, ts_ms)
+                q = self.risk.filter_quotes(
+                    q, self.portfolio.position_usd,
+                    self.portfolio.equity_usd(mid), ts_ms,
+                )
             self.sim.set_quotes(q.bid, q.ask, self.cfg.quote_size_usd)
             self._store.record_quote(
                 self._session_id, ts_ms, self.strategy.name,

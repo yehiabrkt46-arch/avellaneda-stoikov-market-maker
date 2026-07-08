@@ -12,7 +12,7 @@ def test_creates_schema_and_session(tmp_path):
     con = sqlite3.connect(db)
     row = con.execute("SELECT session_id, started_ts_ms, git_commit FROM sessions").fetchone()
     assert row == ("s1", 1751800000000, "abc123")
-    for table in ("quotes", "fills", "rollups"):
+    for table in ("quotes", "fills", "rollups", "events"):
         con.execute(f"SELECT * FROM {table}")  # table exists
     con.close()
 
@@ -47,6 +47,22 @@ def test_record_fill_and_update_adverse(tmp_path):
     assert con.execute("SELECT adverse_move_usd FROM fills WHERE id=?", (fill_id,)).fetchone()[0] is None
     store.set_adverse(fill_id, -1.5)
     assert con.execute("SELECT adverse_move_usd FROM fills WHERE id=?", (fill_id,)).fetchone()[0] == -1.5
+    store.close()
+
+
+def test_record_event_round_trips(tmp_path):
+    store = Store(tmp_path / "mm.sqlite")
+    store.start_session("s1", 0, "c", "{}")
+    store.record_event("s1", 1751800000000, "fixed_spread", "cap_bind", "side=bid position_usd=500.00")
+    store.record_event("s1", 1751800001000, "fixed_spread", "kill_switch", None)
+    con = store.connection
+    rows = con.execute(
+        "SELECT session_id, ts_ms, strategy, kind, detail FROM events ORDER BY id"
+    ).fetchall()
+    assert rows == [
+        ("s1", 1751800000000, "fixed_spread", "cap_bind", "side=bid position_usd=500.00"),
+        ("s1", 1751800001000, "fixed_spread", "kill_switch", None),
+    ]
     store.close()
 
 

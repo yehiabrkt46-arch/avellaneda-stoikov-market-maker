@@ -3,6 +3,7 @@ from mm_bot.config import StrategyConfig
 from mm_bot.feed.book import OrderBook
 from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
 from mm_bot.paper.engine import PaperEngine, StrategyLane
+from mm_bot.paper.portfolio import Fill
 from mm_bot.store.db import Store
 from mm_bot.strategy.fixed_spread import FixedSpreadStrategy
 
@@ -103,3 +104,39 @@ async def test_trades_before_book_ready_are_ignored(tmp_path):
     engine, book, lane, store = make_engine(tmp_path)
     await engine.on_event(trade_ev(ts=1_000_000, price=59990.0))  # no book yet
     assert lane.portfolio.fill_count == 0
+
+
+async def test_inventory_cap_suppresses_bid_via_lane(tmp_path):
+    # default StrategyConfig.inventory_cap_usd is 500.0
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    mid = book.mid()
+    lane.portfolio.position_usd = 500.0  # at the cap
+    lane.portfolio.btc_cash = 500.0 / mid  # entered at ~mid, so equity is flat (no drawdown)
+    await apply(engine, change(ts=1_001_000, change_id=1001, prev=1000))
+    assert lane.sim.bid is None  # buying suppressed
+    assert lane.sim.ask is not None  # unloading side stays quoted
+    row = store.connection.execute("SELECT kind, detail FROM events").fetchone()
+    assert row[0] == "cap_bind"
+    assert "side=bid" in row[1]
+
+
+async def test_kill_switch_stops_quoting_via_lane(tmp_path):
+    # default StrategyConfig.max_drawdown_usd is 100.0
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000, bid=60000.0, ask=60000.5))
+    lane._handle_fill(
+        Fill(timestamp_ms=1_000_000, side="buy", price=60000.0, amount_usd=5000.0, trade_id="f1")
+    )
+    # mid drops far enough that the long position's mark-to-mid equity falls
+    # more than max_drawdown_usd below the peak recorded on the first quote.
+    await apply(engine, snapshot(ts=1_001_000, change_id=1001, bid=58790.0, ask=58790.5))
+    assert lane.risk.killed
+    assert lane.sim.bid is None
+    assert lane.sim.ask is None
+    row = store.connection.execute("SELECT kind FROM events").fetchone()
+    assert row[0] == "kill_switch"
+    # stays dead even after mid recovers
+    await apply(engine, snapshot(ts=1_002_000, change_id=1002, bid=60000.0, ask=60000.5))
+    assert lane.sim.bid is None
+    assert lane.sim.ask is None
