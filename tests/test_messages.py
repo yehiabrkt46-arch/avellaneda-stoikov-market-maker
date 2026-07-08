@@ -2,6 +2,7 @@ from mm_bot.feed.messages import (
     BookChange,
     BookSnapshot,
     TestRequest,
+    Ticker,
     Trade,
     parse_message,
 )
@@ -67,6 +68,20 @@ TRADES_MSG = {
     },
 }
 
+TICKER_MSG = {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+        "channel": "ticker.BTC-PERPETUAL.100ms",
+        "data": {
+            "instrument_name": "BTC-PERPETUAL",
+            "timestamp": 1751800000200,
+            "funding_8h": -0.00005,
+            "mark_price": 60001.2,
+        },
+    },
+}
+
 HEARTBEAT_TEST_REQUEST_MSG = {
     "jsonrpc": "2.0",
     "method": "heartbeat",
@@ -116,3 +131,13 @@ def test_parse_heartbeat_test_request():
 
 def test_parse_rpc_response_is_ignored():
     assert parse_message(RPC_RESPONSE_MSG) == []
+
+
+def test_parse_ticker():
+    events = parse_message(TICKER_MSG)
+    assert events == [
+        Ticker(
+            instrument="BTC-PERPETUAL", timestamp_ms=1751800000200,
+            funding_8h=-0.00005, mark_price=60001.2,
+        )
+    ]

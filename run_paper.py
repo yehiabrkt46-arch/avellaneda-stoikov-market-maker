@@ -56,6 +56,7 @@ async def main() -> None:
     engine = PaperEngine(
         book=client.book, lanes=lanes, store=store, session_id=session_id,
         rollup_interval_ms=cfg.store.rollup_interval_s * 1000,
+        stale_quote_pull_ms=int(cfg.store.stale_quote_pull_s * 1000),
     )
     client._on_event = engine.on_event  # engine consumes all feed events
 

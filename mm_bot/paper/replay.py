@@ -23,7 +23,7 @@ def build_strategy(cfg: StrategyConfig):
 
 def replay_file(
     path: str | Path, strategy_cfgs, store: Store, session_id: str,
-    adverse_horizon_ms: int = 5000,
+    adverse_horizon_ms: int = 5000, stale_quote_pull_ms: int = 10_000,
 ) -> dict:
     store.start_session(session_id, 0, "replay", "{}")
     book = OrderBook()
@@ -31,7 +31,10 @@ def replay_file(
         StrategyLane(build_strategy(c), c, store, session_id, adverse_horizon_ms)
         for c in strategy_cfgs
     ]
-    engine = PaperEngine(book=book, lanes=lanes, store=store, session_id=session_id)
+    engine = PaperEngine(
+        book=book, lanes=lanes, store=store, session_id=session_id,
+        stale_quote_pull_ms=stale_quote_pull_ms,
+    )
 
     async def _run() -> None:
         with open(path, encoding="utf-8") as fh:
@@ -53,6 +56,7 @@ def replay_file(
             "quotes": lane.quote_count,
             "position_usd": lane.portfolio.position_usd,
             "equity_btc": lane.portfolio.equity_btc(mid) if mid else None,
+            "funding_btc": lane.portfolio.funding_btc,
         }
         for lane in lanes
     }

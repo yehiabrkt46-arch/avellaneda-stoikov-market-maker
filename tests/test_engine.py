@@ -1,8 +1,11 @@
 # tests/test_engine.py
+import pytest
+
 from mm_bot.config import StrategyConfig
 from mm_bot.feed.book import OrderBook
-from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
-from mm_bot.paper.engine import PaperEngine, StrategyLane
+from mm_bot.feed.messages import BookChange, BookSnapshot, Ticker, Trade
+from mm_bot.paper.engine import PaperEngine, StrategyLane, funding_accrual_btc
+from mm_bot.paper.portfolio import Fill
 from mm_bot.store.db import Store
 from mm_bot.strategy.fixed_spread import FixedSpreadStrategy
 
@@ -27,6 +30,12 @@ def trade_ev(ts, price, amount=50.0, trade_id="t1"):
     return Trade(
         instrument="BTC-PERPETUAL", trade_id=trade_id, trade_seq=1,
         timestamp_ms=ts, price=price, amount=amount, direction="sell",
+    )
+
+
+def ticker_ev(ts, funding_8h, mark):
+    return Ticker(
+        instrument="BTC-PERPETUAL", timestamp_ms=ts, funding_8h=funding_8h, mark_price=mark,
     )
 
 
@@ -103,3 +112,109 @@ async def test_trades_before_book_ready_are_ignored(tmp_path):
     engine, book, lane, store = make_engine(tmp_path)
     await engine.on_event(trade_ev(ts=1_000_000, price=59990.0))  # no book yet
     assert lane.portfolio.fill_count == 0
+
+
+async def test_inventory_cap_suppresses_bid_via_lane(tmp_path):
+    # default StrategyConfig.inventory_cap_usd is 500.0
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    mid = book.mid()
+    lane.portfolio.position_usd = 500.0  # at the cap
+    lane.portfolio.btc_cash = 500.0 / mid  # entered at ~mid, so equity is flat (no drawdown)
+    await apply(engine, change(ts=1_001_000, change_id=1001, prev=1000))
+    assert lane.sim.bid is None  # buying suppressed
+    assert lane.sim.ask is not None  # unloading side stays quoted
+    row = store.connection.execute("SELECT kind, detail FROM events").fetchone()
+    assert row[0] == "cap_bind"
+    assert "side=bid" in row[1]
+
+
+async def test_kill_switch_stops_quoting_via_lane(tmp_path):
+    # default StrategyConfig.max_drawdown_usd is 100.0
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000, bid=60000.0, ask=60000.5))
+    lane._handle_fill(
+        Fill(timestamp_ms=1_000_000, side="buy", price=60000.0, amount_usd=5000.0, trade_id="f1")
+    )
+    # mid drops far enough that the long position's mark-to-mid equity falls
+    # more than max_drawdown_usd below the peak recorded on the first quote.
+    await apply(engine, snapshot(ts=1_001_000, change_id=1001, bid=58790.0, ask=58790.5))
+    assert lane.risk.killed
+    assert lane.sim.bid is None
+    assert lane.sim.ask is None
+    row = store.connection.execute("SELECT kind FROM events").fetchone()
+    assert row[0] == "kill_switch"
+    # stays dead even after mid recovers
+    await apply(engine, snapshot(ts=1_002_000, change_id=1002, bid=60000.0, ask=60000.5))
+    assert lane.sim.bid is None
+    assert lane.sim.ask is None
+
+
+async def test_trade_after_stale_gap_does_not_fill_pre_gap_quote(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))  # quotes bid 59995.0 / ask 60005.5
+    assert lane.sim.bid == (59995.0, 100.0)
+    # > 10s gap (default stale_quote_pull_ms) before this trade arrives
+    await engine.on_event(trade_ev(ts=1_011_001, price=59990.0))
+    assert lane.portfolio.fill_count == 0  # pre-gap quote must not fill
+    assert lane.sim.bid is None  # cleared by the stale pull
+    row = store.connection.execute("SELECT kind FROM events").fetchone()
+    assert row[0] == "stale_pull"
+
+
+async def test_trade_within_gap_threshold_still_fills(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await engine.on_event(trade_ev(ts=1_009_999, price=59990.0))  # 10s gap, not > 10s
+    assert lane.portfolio.fill_count == 1
+    assert store.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+
+async def test_stale_gap_pulls_quotes_before_book_event_processed(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await apply(engine, snapshot(ts=1_020_000, change_id=1001, bid=59000.0, ask=59000.5))
+    kinds = [
+        r[0] for r in store.connection.execute("SELECT kind FROM events ORDER BY id").fetchall()
+    ]
+    assert "stale_pull" in kinds
+    # the stale pull happened, then normal processing requoted at the new mid
+    assert lane.sim.bid == (58995.0, 100.0)
+
+
+def test_funding_accrual_sign_long_pays_when_funding_positive():
+    delta = funding_accrual_btc(position_usd=1000.0, mark=60000.0, funding_8h=0.0002, elapsed_s=28800.0)
+    assert delta < 0
+
+
+def test_funding_accrual_sign_short_gains_when_funding_positive():
+    delta = funding_accrual_btc(position_usd=-1000.0, mark=60000.0, funding_8h=0.0002, elapsed_s=28800.0)
+    assert delta > 0
+
+
+def test_funding_accrual_proportional_to_elapsed_time():
+    half = funding_accrual_btc(1000.0, 60000.0, 0.0002, 14400.0)
+    full = funding_accrual_btc(1000.0, 60000.0, 0.0002, 28800.0)
+    assert full == pytest.approx(2 * half)
+
+
+async def test_no_ticker_skips_accrual_and_counts_interval(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await apply(engine, change(ts=1_061_000, change_id=1001, prev=1000))  # rollup fires
+    assert lane.portfolio.funding_btc == 0.0
+    assert engine.skipped_funding_intervals == 1
+
+
+async def test_ticker_drives_funding_accrual_persisted_in_rollup(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await engine.on_event(ticker_ev(ts=1_000_500, funding_8h=0.0002, mark=60000.0))
+    lane.portfolio.position_usd = 1000.0
+    lane.portfolio.btc_cash = 1000.0 / 60000.0
+    await apply(engine, change(ts=1_061_000, change_id=1001, prev=1000))  # 61s later -> rollup
+    expected = funding_accrual_btc(1000.0, 60000.0, 0.0002, 61.0)
+    assert lane.portfolio.funding_btc == pytest.approx(expected)
+    assert engine.skipped_funding_intervals == 0
+    row = store.connection.execute("SELECT funding_btc FROM rollups").fetchone()
+    assert row[0] == pytest.approx(expected)
