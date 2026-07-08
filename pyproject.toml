@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mm-bot"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "websockets>=12.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.setuptools]
+packages = ["mm_bot", "mm_bot.feed", "mm_bot.paper", "mm_bot.strategy", "mm_bot.store", "mm_bot.exec_testnet"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
