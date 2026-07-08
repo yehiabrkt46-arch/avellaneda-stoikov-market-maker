@@ -5,7 +5,7 @@ import pytest
 
 from mm_bot.config import FeedConfig
 from mm_bot.feed.client import DeribitFeedClient
-from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
+from mm_bot.feed.messages import BookChange, BookSnapshot, Ticker, Trade
 
 
 class FeedClosed(Exception):
@@ -95,6 +95,22 @@ def trades_msg():
     }
 
 
+def ticker_msg():
+    return {
+        "jsonrpc": "2.0",
+        "method": "subscription",
+        "params": {
+            "channel": "ticker.BTC-PERPETUAL.100ms",
+            "data": {
+                "instrument_name": "BTC-PERPETUAL",
+                "timestamp": 1751800000200,
+                "funding_8h": 0.0001,
+                "mark_price": 60000.3,
+            },
+        },
+    }
+
+
 def heartbeat_msg():
     return {"jsonrpc": "2.0", "method": "heartbeat", "params": {"type": "test_request"}}
 
@@ -128,6 +144,7 @@ async def test_session_sets_heartbeat_and_subscribes():
     assert ws.sent[1]["params"]["channels"] == [
         "book.BTC-PERPETUAL.100ms",
         "trades.BTC-PERPETUAL.100ms",
+        "ticker.BTC-PERPETUAL.100ms",
     ]
 
 
@@ -140,6 +157,14 @@ async def test_events_dispatched_and_book_maintained():
     assert client.book.best_bid() == 60000.0
     assert client.book.change_id == 1001
     assert len(raw) == 3  # every raw message hit the recorder hook
+
+
+async def test_ticker_dispatched_to_on_event():
+    client, ws, events, raw = make_client([ticker_msg()])
+    await run_session(client, ws)
+    assert [type(e) for e in events] == [Ticker]
+    assert events[0].funding_8h == 0.0001
+    assert events[0].mark_price == 60000.3
 
 
 async def test_heartbeat_test_request_answered():

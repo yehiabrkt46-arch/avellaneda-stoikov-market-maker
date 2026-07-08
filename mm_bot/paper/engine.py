@@ -9,7 +9,7 @@ import logging
 
 from mm_bot.config import StrategyConfig
 from mm_bot.feed.book import OrderBook
-from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
+from mm_bot.feed.messages import BookChange, BookSnapshot, Ticker, Trade
 from mm_bot.paper.adverse import AdverseSelectionTracker
 from mm_bot.paper.portfolio import Portfolio
 from mm_bot.paper.sim import FillSimulator
@@ -18,6 +18,20 @@ from mm_bot.store.db import Store
 from mm_bot.strategy.base import QuotePair
 
 log = logging.getLogger(__name__)
+
+FUNDING_PERIOD_S = 28800.0  # 8 hours, the Deribit funding_8h reference period
+
+
+def funding_accrual_btc(
+    position_usd: float, mark: float, funding_8h: float, elapsed_s: float
+) -> float:
+    """BTC funding delta for one accrual interval.
+
+    Sign convention: positive funding_8h means longs pay shorts. A long
+    (positive position_usd) with positive funding loses BTC; a short
+    (negative position_usd) with positive funding gains BTC.
+    """
+    return -position_usd / mark * funding_8h * (elapsed_s / FUNDING_PERIOD_S)
 
 
 class StrategyLane:
@@ -85,6 +99,11 @@ class StrategyLane:
         self.sim.set_quotes(None, None, 0)
         self._store.record_event(self._session_id, ts_ms, self.strategy.name, "stale_pull", None)
 
+    def accrue_funding(self, funding_8h: float, mark: float, elapsed_s: float) -> None:
+        self.portfolio.funding_btc += funding_accrual_btc(
+            self.portfolio.position_usd, mark, funding_8h, elapsed_s
+        )
+
     def rollup(self, ts_ms: int, mid: float) -> None:
         self._store.record_rollup(
             self._session_id, ts_ms, self.strategy.name,
@@ -95,6 +114,7 @@ class StrategyLane:
             mid=mid,
             fill_count=self.portfolio.fill_count,
             quote_count=self.quote_count,
+            funding_btc=self.portfolio.funding_btc,
         )
 
 
@@ -112,6 +132,9 @@ class PaperEngine:
         self._stale_quote_pull_ms = stale_quote_pull_ms
         self._last_rollup_ms: int | None = None
         self.last_event_ts: int | None = None
+        self._latest_funding_8h: float | None = None
+        self._latest_mark: float | None = None
+        self.skipped_funding_intervals = 0
 
     async def on_event(self, event) -> None:
         ts_ms = getattr(event, "timestamp_ms", None)
@@ -132,6 +155,9 @@ class PaperEngine:
             case Trade():
                 for lane in self.lanes:
                     lane.on_trade(event)
+            case Ticker():
+                self._latest_funding_8h = event.funding_8h
+                self._latest_mark = event.mark_price
 
     def _maybe_pull_stale_quotes(self, ts_ms: int) -> None:
         if self.last_event_ts is None:
@@ -152,7 +178,20 @@ class PaperEngine:
         if self._last_rollup_ms is None:
             self._last_rollup_ms = ts_ms
             return
-        if ts_ms - self._last_rollup_ms >= self._rollup_interval_ms:
+        elapsed_ms = ts_ms - self._last_rollup_ms
+        if elapsed_ms >= self._rollup_interval_ms:
+            self._accrue_funding(elapsed_ms / 1000.0)
             for lane in self.lanes:
                 lane.rollup(ts_ms, mid)
             self._last_rollup_ms = ts_ms
+
+    def _accrue_funding(self, elapsed_s: float) -> None:
+        if self._latest_funding_8h is None or self._latest_mark is None:
+            self.skipped_funding_intervals += 1
+            log.info(
+                "funding accrual skipped (%d total so far): no ticker received yet",
+                self.skipped_funding_intervals,
+            )
+            return
+        for lane in self.lanes:
+            lane.accrue_funding(self._latest_funding_8h, self._latest_mark, elapsed_s)

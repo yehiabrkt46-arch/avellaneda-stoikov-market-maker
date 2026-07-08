@@ -1,8 +1,10 @@
 # tests/test_engine.py
+import pytest
+
 from mm_bot.config import StrategyConfig
 from mm_bot.feed.book import OrderBook
-from mm_bot.feed.messages import BookChange, BookSnapshot, Trade
-from mm_bot.paper.engine import PaperEngine, StrategyLane
+from mm_bot.feed.messages import BookChange, BookSnapshot, Ticker, Trade
+from mm_bot.paper.engine import PaperEngine, StrategyLane, funding_accrual_btc
 from mm_bot.paper.portfolio import Fill
 from mm_bot.store.db import Store
 from mm_bot.strategy.fixed_spread import FixedSpreadStrategy
@@ -28,6 +30,12 @@ def trade_ev(ts, price, amount=50.0, trade_id="t1"):
     return Trade(
         instrument="BTC-PERPETUAL", trade_id=trade_id, trade_seq=1,
         timestamp_ms=ts, price=price, amount=amount, direction="sell",
+    )
+
+
+def ticker_ev(ts, funding_8h, mark):
+    return Ticker(
+        instrument="BTC-PERPETUAL", timestamp_ms=ts, funding_8h=funding_8h, mark_price=mark,
     )
 
 
@@ -172,3 +180,41 @@ async def test_stale_gap_pulls_quotes_before_book_event_processed(tmp_path):
     assert "stale_pull" in kinds
     # the stale pull happened, then normal processing requoted at the new mid
     assert lane.sim.bid == (58995.0, 100.0)
+
+
+def test_funding_accrual_sign_long_pays_when_funding_positive():
+    delta = funding_accrual_btc(position_usd=1000.0, mark=60000.0, funding_8h=0.0002, elapsed_s=28800.0)
+    assert delta < 0
+
+
+def test_funding_accrual_sign_short_gains_when_funding_positive():
+    delta = funding_accrual_btc(position_usd=-1000.0, mark=60000.0, funding_8h=0.0002, elapsed_s=28800.0)
+    assert delta > 0
+
+
+def test_funding_accrual_proportional_to_elapsed_time():
+    half = funding_accrual_btc(1000.0, 60000.0, 0.0002, 14400.0)
+    full = funding_accrual_btc(1000.0, 60000.0, 0.0002, 28800.0)
+    assert full == pytest.approx(2 * half)
+
+
+async def test_no_ticker_skips_accrual_and_counts_interval(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await apply(engine, change(ts=1_061_000, change_id=1001, prev=1000))  # rollup fires
+    assert lane.portfolio.funding_btc == 0.0
+    assert engine.skipped_funding_intervals == 1
+
+
+async def test_ticker_drives_funding_accrual_persisted_in_rollup(tmp_path):
+    engine, book, lane, store = make_engine(tmp_path)
+    await apply(engine, snapshot(ts=1_000_000))
+    await engine.on_event(ticker_ev(ts=1_000_500, funding_8h=0.0002, mark=60000.0))
+    lane.portfolio.position_usd = 1000.0
+    lane.portfolio.btc_cash = 1000.0 / 60000.0
+    await apply(engine, change(ts=1_061_000, change_id=1001, prev=1000))  # 61s later -> rollup
+    expected = funding_accrual_btc(1000.0, 60000.0, 0.0002, 61.0)
+    assert lane.portfolio.funding_btc == pytest.approx(expected)
+    assert engine.skipped_funding_intervals == 0
+    row = store.connection.execute("SELECT funding_btc FROM rollups").fetchone()
+    assert row[0] == pytest.approx(expected)

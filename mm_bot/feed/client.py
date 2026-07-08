@@ -10,6 +10,7 @@ from mm_bot.feed.messages import (
     BookChange,
     BookSnapshot,
     TestRequest,
+    Ticker,
     Trade,
     parse_message,
 )
@@ -93,16 +94,22 @@ class DeribitFeedClient:
                 await self._on_event(event)
             case Trade():
                 await self._on_event(event)
+            case Ticker():
+                await self._on_event(event)
 
     async def _subscribe(self, ws, unsubscribe_first: bool) -> None:
         book_channel = f"book.{self._cfg.instrument}.{self._cfg.book_interval}"
         trades_channel = f"trades.{self._cfg.instrument}.{self._cfg.book_interval}"
+        ticker_channel = f"ticker.{self._cfg.instrument}.{self._cfg.book_interval}"
         if unsubscribe_first:
+            # only the book channel carries a sequence to resync; trades and
+            # ticker have no gap concept and stay subscribed.
             await self._rpc(ws, "public/unsubscribe", {"channels": [book_channel]})
             await self._rpc(ws, "public/subscribe", {"channels": [book_channel]})
         else:
             await self._rpc(
-                ws, "public/subscribe", {"channels": [book_channel, trades_channel]}
+                ws, "public/subscribe",
+                {"channels": [book_channel, trades_channel, ticker_channel]},
             )
 
     async def _rpc(self, ws, method: str, params: dict) -> None:

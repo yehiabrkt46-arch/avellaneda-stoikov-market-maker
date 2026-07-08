@@ -56,6 +56,7 @@ def replay_file(
             "quotes": lane.quote_count,
             "position_usd": lane.portfolio.position_usd,
             "equity_btc": lane.portfolio.equity_btc(mid) if mid else None,
+            "funding_btc": lane.portfolio.funding_btc,
         }
         for lane in lanes
     }

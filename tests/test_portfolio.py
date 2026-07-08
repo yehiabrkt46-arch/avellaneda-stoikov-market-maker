@@ -48,6 +48,18 @@ def test_long_loses_when_price_falls():
     assert p.equity_btc(50000.0) < 0
 
 
+def test_funding_btc_starts_at_zero():
+    p = Portfolio()
+    assert p.funding_btc == 0.0
+
+
+def test_equity_includes_funding_btc():
+    p = Portfolio()
+    p.funding_btc = 0.002
+    assert p.equity_btc(60000.0) == pytest.approx(0.002)  # flat, only the funding credit
+    assert p.equity_usd(60000.0) == pytest.approx(120.0)
+
+
 def test_fill_count_increments():
     p = Portfolio()
     p.apply_fill(fill("buy", 50000.0, 10.0))

@@ -62,7 +62,21 @@ class Store:
         self.connection = sqlite3.connect(path)
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.executescript(_SCHEMA)
+        self._migrate_rollups_funding_column()
         self.connection.commit()
+
+    def _migrate_rollups_funding_column(self) -> None:
+        """Append-only migration: add rollups.funding_btc if it's missing.
+
+        Runs on every open, so a DB created before this column existed picks
+        it up (old rows keep their data, funding_btc defaults to 0.0) and a
+        fresh DB is unaffected since the column is then already present.
+        """
+        cols = [row[1] for row in self.connection.execute("PRAGMA table_info(rollups)")]
+        if "funding_btc" not in cols:
+            self.connection.execute(
+                "ALTER TABLE rollups ADD COLUMN funding_btc REAL DEFAULT 0.0"
+            )
 
     def start_session(
         self, session_id: str, started_ts_ms: int, git_commit: str, config_json: str
@@ -107,13 +121,14 @@ class Store:
         self, session_id: str, ts_ms: int, strategy: str, *,
         position_usd: float, btc_cash: float, equity_btc: float,
         equity_usd: float, mid: float, fill_count: int, quote_count: int,
+        funding_btc: float = 0.0,
     ) -> None:
         self.connection.execute(
             "INSERT INTO rollups (session_id, ts_ms, strategy, position_usd,"
-            " btc_cash, equity_btc, equity_usd, mid, fill_count, quote_count)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " btc_cash, equity_btc, equity_usd, mid, fill_count, quote_count, funding_btc)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (session_id, ts_ms, strategy, position_usd, btc_cash, equity_btc,
-             equity_usd, mid, fill_count, quote_count),
+             equity_usd, mid, fill_count, quote_count, funding_btc),
         )
         self.connection.commit()
 

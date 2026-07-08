@@ -33,6 +33,14 @@ class Trade:
 
 
 @dataclass(frozen=True)
+class Ticker:
+    instrument: str
+    timestamp_ms: int
+    funding_8h: float
+    mark_price: float
+
+
+@dataclass(frozen=True)
 class TestRequest:
     """Server heartbeat challenge; client must answer with public/test."""
 
@@ -87,5 +95,14 @@ def parse_message(msg: dict) -> list:
                 direction=t["direction"],
             )
             for t in data
+        ]
+    if channel.startswith("ticker."):
+        return [
+            Ticker(
+                instrument=data["instrument_name"],
+                timestamp_ms=data["timestamp"],
+                funding_8h=data["funding_8h"],
+                mark_price=data["mark_price"],
+            )
         ]
     return []
