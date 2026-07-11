@@ -8,11 +8,9 @@ A live market-making research system for the Deribit BTC inverse perpetual. It r
 
 Most hobby market-making projects report profits from a fill simulator that quietly grants fills the market would never have given. This project takes the opposite approach.
 
-Fills are granted only when a real trade strictly crosses the quote. Resting at the touch earns nothing in the simulation, so the measured edge is a floor, biased against the strategy, and the analysis treats it as exactly that.
+The simulator grants a fill only when a real trade strictly crosses the quote. Resting at the touch earns nothing, so the measured edge is a floor, biased against the strategy, and the analysis treats it as exactly that.
 
-Costs are counted in full. Adverse selection is tracked per fill against the forward mid, funding accrues from the live ticker at the exchange formula, and equity is marked in BTC with correct inverse-perpetual math.
-
-Risk actions leave a paper trail. Inventory cap binds, kill-switch trips, and stale-quote pulls all land in an events table, so the final numbers can be audited against what the risk layer did.
+The engine also counts every cost: it tracks adverse selection per fill against the forward mid, accrues funding from the live ticker at the exchange formula, and marks equity in BTC with correct inverse-perpetual math. Risk actions leave a paper trail too. Inventory cap binds, kill-switch trips, and stale-quote pulls all land in an events table, so the final numbers can be checked against what the risk layer did.
 
 An early 29-hour run at a naive configuration (5 USD half-spread, 1 s requote) measured a statistically significant negative per-fill edge for both strategies under this floor model, while the A-S inventory control held position about 40x tighter than the baseline. That result motivates the research phase: decompose the loss into spread capture, adverse selection, inventory, and funding, then tune on training days and report held-out test days only.
 
