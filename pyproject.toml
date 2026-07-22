@@ -5,6 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mm-bot"
 version = "0.1.0"
+description = "Live Avellaneda-Stoikov market maker on Deribit BTC-PERPETUAL with a conservative fill simulator, risk layer, funding accrual, and deterministic replay for offline research."
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "websockets>=12.0",
@@ -18,7 +21,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["mm_bot", "mm_bot.feed", "mm_bot.paper", "mm_bot.strategy", "mm_bot.store", "mm_bot.exec_testnet"]
+packages = ["mm_bot", "mm_bot.feed", "mm_bot.paper", "mm_bot.strategy", "mm_bot.store", "mm_bot.exec_testnet", "mm_bot.research"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

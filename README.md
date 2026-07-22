@@ -1,5 +1,8 @@
 # Avellaneda-Stoikov market maker (Deribit BTC-PERPETUAL)
 
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 A live market-making research system for the Deribit BTC inverse perpetual. It runs an Avellaneda-Stoikov quoting model next to a fixed-spread baseline on real mainnet market data and measures both with a fill model built to understate performance rather than flatter it. The goal is to answer one question: does the strategy have edge, and if not, where does the money go?
 
 **Status:** the multi-day live measurement run is complete (9.66 days) and the parameter sweep with walk-forward validation over the recorded data is done. See Results and Parameter sweep below.
