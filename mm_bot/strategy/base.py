@@ -27,5 +27,10 @@ class Strategy:
     def observe_trade(self, price: float, ts_ms: int) -> None:
         pass
 
+    def observe_book(
+        self, bid: float, bid_size: float, ask: float, ask_size: float, ts_ms: int
+    ) -> None:
+        pass
+
     def quotes(self, mid: float, position_usd: float, now_ms: int):
         raise NotImplementedError

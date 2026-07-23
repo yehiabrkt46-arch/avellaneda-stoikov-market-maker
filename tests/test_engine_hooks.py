@@ -12,12 +12,16 @@ class SpyStrategy(Strategy):
         self.name = "spy"
         self.mids = []
         self.trades = []
+        self.books = []
 
     def observe_mid(self, mid, ts_ms):
         self.mids.append((mid, ts_ms))
 
     def observe_trade(self, price, ts_ms):
         self.trades.append((price, ts_ms))
+
+    def observe_book(self, bid, bid_size, ask, ask_size, ts_ms):
+        self.books.append((bid, bid_size, ask, ask_size, ts_ms))
 
     def quotes(self, mid, position_usd, now_ms):
         return QuotePair(bid=None, ask=None)
@@ -27,6 +31,13 @@ def snapshot(ts):
     return BookSnapshot(
         instrument="BTC-PERPETUAL", change_id=1000, timestamp_ms=ts,
         bids=[(60000.0, 5000.0)], asks=[(60000.5, 4200.0)],
+    )
+
+
+def one_sided_snapshot(ts):
+    return BookSnapshot(
+        instrument="BTC-PERPETUAL", change_id=1000, timestamp_ms=ts,
+        bids=[(60000.0, 5000.0)], asks=[],
     )
 
 
@@ -56,3 +67,32 @@ def test_base_strategy_hooks_are_noops():
     s = Strategy()
     s.observe_mid(60000.0, 0)   # must not raise
     s.observe_trade(60000.0, 0)  # must not raise
+    s.observe_book(60000.0, 5000.0, 60000.5, 4200.0, 0)  # must not raise
+
+
+async def test_book_hook_fires_once_per_book_event(tmp_path):
+    cfg = StrategyConfig(name="spy")
+    store = Store(tmp_path / "mm.sqlite")
+    store.start_session("s1", 0, "c", "{}")
+    strat = SpyStrategy()
+    lane = StrategyLane(strat, cfg, store, "s1", adverse_horizon_ms=5000)
+    engine = PaperEngine(book=OrderBook(), lanes=[lane], store=store, session_id="s1")
+    ev = snapshot(ts=1_000_000)
+    engine.apply_book_event(ev)
+    await engine.on_event(ev)
+    assert strat.books == [(60000.0, 5000.0, 60000.5, 4200.0, 1_000_000)]
+    store.close()
+
+
+async def test_book_hook_skipped_for_one_sided_book(tmp_path):
+    cfg = StrategyConfig(name="spy")
+    store = Store(tmp_path / "mm.sqlite")
+    store.start_session("s1", 0, "c", "{}")
+    strat = SpyStrategy()
+    lane = StrategyLane(strat, cfg, store, "s1", adverse_horizon_ms=5000)
+    engine = PaperEngine(book=OrderBook(), lanes=[lane], store=store, session_id="s1")
+    ev = one_sided_snapshot(ts=1_000_000)
+    engine.apply_book_event(ev)
+    await engine.on_event(ev)
+    assert strat.books == []
+    store.close()
