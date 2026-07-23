@@ -35,6 +35,9 @@ class StrategyConfig:
     vol_min_samples: int = 30
     k_window_s: float = 1800.0
     k_min_trades: int = 50
+    ofi_beta: float = 0.0
+    ofi_scale: float = 0.0
+    ofi_window_s: float = 1.0
     inventory_cap_usd: float = 500.0
     max_drawdown_usd: float = 100.0
 
