@@ -65,3 +65,35 @@ class TradeIntensity:
             return None
         mean = sum(d for _, d in self._obs) / len(self._obs)
         return 1.0 / mean
+
+
+class OfiEstimator:
+    """Online order-flow imbalance (Cont, Kukanov, Stoikov 2014).
+
+    Per book update: e = 1[b>=pb]*bs - 1[b<=pb]*pbs - (1[a<=pa]*as - 1[a>=pa]*pas),
+    summed over a trailing time window. Mirrors q/ofi.q exactly so the live
+    signal is the same quantity the M8 study validated out of sample. No warm
+    gate: an empty window reads 0.0, which is a neutral (no-skew) signal.
+    """
+
+    def __init__(self, window_ms: int) -> None:
+        self._window_ms = window_ms
+        self._prev: tuple[float, float, float, float] | None = None
+        self._events: deque = deque()  # (ts_ms, e)
+        self._sum = 0.0
+
+    def observe(self, bid: float, bsize: float, ask: float, asize: float, ts_ms: int) -> None:
+        if self._prev is not None:
+            pb, pbs, pa, pas = self._prev
+            e = ((bsize if bid >= pb else 0.0) - (pbs if bid <= pb else 0.0)) \
+                - ((asize if ask <= pa else 0.0) - (pas if ask >= pa else 0.0))
+            self._events.append((ts_ms, e))
+            self._sum += e
+            cutoff = ts_ms - self._window_ms
+            while self._events and self._events[0][0] <= cutoff:
+                _, old = self._events.popleft()
+                self._sum -= old
+        self._prev = (bid, bsize, ask, asize)
+
+    def ofi(self) -> float:
+        return self._sum
