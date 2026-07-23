@@ -88,6 +88,11 @@ class StrategyLane:
             self.quote_count += 1
             self.last_quote_ms = ts_ms
 
+    def on_book(
+        self, bid: float, bid_size: float, ask: float, ask_size: float, ts_ms: int
+    ) -> None:
+        self.strategy.observe_book(bid, bid_size, ask, ask_size, ts_ms)
+
     def on_trade(self, trade: Trade) -> None:
         if self._current_mid is None:
             return  # book not ready; never fill blind
@@ -149,6 +154,10 @@ class PaperEngine:
                 if mid is None:
                     return
                 ts = self._book.timestamp_ms
+                bb, ba = self._book.best_bid(), self._book.best_ask()
+                bbs, bas = self._book.best_bid_size(), self._book.best_ask_size()
+                for lane in self.lanes:
+                    lane.on_book(bb, bbs, ba, bas, ts)
                 for lane in self.lanes:
                     lane.on_mid(mid, ts)
                 self._maybe_rollup(ts, mid)

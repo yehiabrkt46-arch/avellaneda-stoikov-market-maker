@@ -73,3 +73,45 @@ def test_observe_trade_uses_distance_from_last_mid():
 def test_build_strategy_factory_dispatches():
     cfg = StrategyConfig(kind="avellaneda_stoikov", name="as")
     assert isinstance(build_strategy(cfg), AvellanedaStoikovStrategy)
+
+
+def test_ofi_skew_shifts_reservation():
+    # book sequence gives OFI = +2.0 (same hand-computed step as test_estimators.py)
+    strat = make_strat(ofi_beta=5e-5, ofi_scale=1.0)
+    now = warm_up(strat)
+    strat.observe_book(100.0, 5.0, 101.0, 3.0, 1000)
+    strat.observe_book(100.0, 7.0, 101.0, 3.0, 1100)  # e = +2, ofi = 2.0
+    q = strat.quotes(mid=60000.0, position_usd=200.0, now_ms=now)
+
+    twin = make_strat(ofi_beta=5e-5, ofi_scale=0.0)
+    now2 = warm_up(twin)
+    twin.observe_book(100.0, 5.0, 101.0, 3.0, 1000)
+    twin.observe_book(100.0, 7.0, 101.0, 3.0, 1100)
+    base = twin.quotes(mid=60000.0, position_usd=200.0, now_ms=now2)
+
+    shift = 5e-5 * 1.0 * 2.0 * 60000.0  # ofi_scale * ofi_beta * ofi * mid = 6.0
+    assert q.bid == pytest.approx(base.bid + shift, abs=0.5)  # one-tick tolerance
+    assert q.ask == pytest.approx(base.ask + shift, abs=0.5)
+
+
+def test_ofi_zero_scale_identical():
+    strat = make_strat(ofi_beta=5e-5, ofi_scale=0.0)
+    now = warm_up(strat)
+    strat.observe_book(100.0, 5.0, 101.0, 3.0, 1000)
+    strat.observe_book(100.0, 7.0, 101.0, 3.0, 1100)  # nonzero OFI, but scale is 0
+    q = strat.quotes(mid=60000.0, position_usd=200.0, now_ms=now)
+
+    never_observed = make_strat(ofi_beta=5e-5, ofi_scale=0.0)
+    now2 = warm_up(never_observed)
+    base = never_observed.quotes(mid=60000.0, position_usd=200.0, now_ms=now2)
+
+    assert q == base
+
+
+def test_ofi_not_applied_during_warmup():
+    strat = make_strat(ofi_beta=1.0, ofi_scale=1.0)
+    strat.observe_book(100.0, 5.0, 101.0, 3.0, 1000)
+    strat.observe_book(100.0, 7.0, 101.0, 3.0, 1100)  # nonzero OFI, estimators still cold
+    q = strat.quotes(mid=60000.25, position_usd=0.0, now_ms=0)
+    assert q.bid == 59995.0  # same as plain warmup fallback
+    assert q.ask == 60005.5

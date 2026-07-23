@@ -1,7 +1,7 @@
 # tests/test_estimators.py
 import pytest
 
-from mm_bot.strategy.estimators import EwmaVolatility, TradeIntensity
+from mm_bot.strategy.estimators import EwmaVolatility, OfiEstimator, TradeIntensity
 
 
 def test_vol_not_warm_before_min_samples():
@@ -61,3 +61,26 @@ def test_intensity_zero_mean_not_warm():
     k.observe(0.0, 1_000_000)
     k.observe(0.0, 1_001_000)
     assert k.k() is None
+
+
+def test_ofi_matches_hand_computed_sequence():
+    # Same sequence as tests/test_ofi.py (q side): e values 2, -7, -6
+    o = OfiEstimator(window_ms=10_000)
+    o.observe(100.0, 5.0, 101.0, 3.0, 1000)   # first obs: no prev, e undefined
+    assert o.ofi() == 0.0
+    o.observe(100.0, 7.0, 101.0, 3.0, 1100)   # e = +2
+    assert o.ofi() == 2.0
+    o.observe(99.0, 4.0, 101.0, 3.0, 1200)    # e = -7
+    assert o.ofi() == -5.0
+    o.observe(99.0, 4.0, 100.0, 6.0, 1300)    # e = -6
+    assert o.ofi() == -11.0
+
+
+def test_ofi_window_eviction():
+    o = OfiEstimator(window_ms=150)
+    o.observe(100.0, 5.0, 101.0, 3.0, 1000)
+    o.observe(100.0, 7.0, 101.0, 3.0, 1100)   # e = +2 at ts 1100
+    o.observe(99.0, 4.0, 101.0, 3.0, 1200)    # e = -7 at ts 1200
+    # window is (ts - 150, ts]: at ts 1300 the +2 event (1100) has left
+    o.observe(99.0, 4.0, 100.0, 6.0, 1300)    # e = -6 at ts 1300
+    assert o.ofi() == -13.0
