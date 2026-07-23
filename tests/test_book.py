@@ -88,3 +88,12 @@ def test_snapshot_after_reset_reinitializes():
     book.reset()
     book.apply_snapshot(snapshot())
     assert book.best_bid() == 60000.0
+
+
+def test_best_size_accessors():
+    book = OrderBook()
+    book.apply_snapshot(BookSnapshot(instrument="BTC-PERPETUAL", change_id=1,
+                                     timestamp_ms=1000,
+                                     bids=[(100.0, 5.0)], asks=[(101.0, 3.0)]))
+    assert book.best_bid_size() == 5.0
+    assert book.best_ask_size() == 3.0

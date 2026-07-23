@@ -45,6 +45,14 @@ class OrderBook:
     def best_ask(self) -> float | None:
         return min(self._asks) if self._asks else None
 
+    def best_bid_size(self) -> float | None:
+        bb = self.best_bid()
+        return None if bb is None else self._bids[bb]
+
+    def best_ask_size(self) -> float | None:
+        ba = self.best_ask()
+        return None if ba is None else self._asks[ba]
+
     def mid(self) -> float | None:
         bb, ba = self.best_bid(), self.best_ask()
         if bb is None or ba is None:
