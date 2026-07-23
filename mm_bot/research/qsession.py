@@ -29,5 +29,8 @@ def get_q(scripts: tuple[str, ...] = ()):
             "license: https://kx.com/kdb-personal-edition-download/"
         )
     for name in scripts:
-        pykx.q((Q_DIR / name).read_text(encoding="utf-8"))
+        # q's native script load parses statement-by-statement, unlike a single
+        # pykx.q(<file text>) eval which needs every top-level definition
+        # joined by semicolons.
+        pykx.q(f'system "l {(Q_DIR / name).as_posix()}"')
     return pykx.q
