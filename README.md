@@ -28,6 +28,9 @@ mm_bot/
   paper/      Paper-trading engine: strict-cross fill simulator, inverse-perp
               portfolio accounting, funding accrual, adverse-selection tracker,
               deterministic replay of recorded sessions
+  research/   Offline research: per-fill edge decomposition (spread capture vs
+              adverse selection), chronological walk-forward train/test split;
+              kdb+/q tick store layer (see below)
   risk.py     Per-strategy risk manager: inventory cap, drawdown kill switch
   store/      Append-only SQLite (WAL): quotes, fills, rollups, risk events
   exec_testnet/  Deribit testnet execution connector (auth, place/amend/cancel)
@@ -113,6 +116,18 @@ Selection was walk-forward and chronological, not shuffled: the earliest 8 of th
 | avellaneda_stoikov | gamma = 0.002, horizon_s = 120 | -68.66 USD | -19.42 USD |
 
 Two honest caveats. First, both winners sit at the edge of the grid that was searched (the widest spread tried, and the highest gamma / longest horizon tried), so a wider spread or a more risk-averse gamma than what was tested might do better still; that direction was not explored given the roughly 4.5 hours of VPS time the 12-candidate grid already cost. Second, even after tuning both strategies independently on their own train days, fixed_spread's best configuration still beats Avellaneda-Stoikov's best configuration on both train and held-out test score. Retuning did not close the gap the naive-config run showed, it held up out of sample. Nothing here has been shown to be profitable in an absolute sense either, both winners are still net negative under the conservative fill floor; retuning reduced the loss, it did not reverse its sign.
+
+## kdb+/q tick store and research layer
+
+The measurement run left behind 5.2 GB of raw recorded market data (every websocket message, order book deltas, trades, ticker) plus the SQLite fill and rollup tables. The Python replay engine is the correctness oracle for that data, but it is a poor interactive research tool: one full pass over the recording takes about 22 minutes, so every new microstructure question costs a batch job. The research layer moves that work onto kdb+/q, the column store used for exactly this job at most market-making desks.
+
+How it is used here:
+
+- **Date-partitioned tick database.** The raw JSONL is loaded into a kdb+ database partitioned by date (`top`, `depth`, `trade` tables from the feed; `fill`, `quote`, `rollup`, `event` tables from the trading engine), ingested through the same message parser the live engine uses, so there is no second parse implementation to drift. Loading goes through PyKX so ingestion stays in the existing Python toolchain. Row counts are asserted against the SQLite tables and the raw line counts at load time.
+- **Edge decomposition as asof joins.** The per-fill decomposition into spread capture and adverse selection needs the mid at fill time and the mid at a forward horizon for every fill. In q that is two `aj` (asof join) calls against the top-of-book table and a grouped select, replacing a per-fill Python loop over the whole recording. The q implementation is not trusted on its own: a parity test recomputes the full 9.66-day decomposition in both implementations and requires per-strategy per-day agreement, with the Python inverse-perpetual accounting (tested against the exact Deribit contract math) kept as the oracle. Two independent implementations in different paradigms reproducing the same numbers is the point, not just speed.
+- **Order-flow imbalance study.** The open research question from the sweep is whether a short-horizon order-flow imbalance signal (Cont, Kukanov and Stoikov style, computed from top-of-book price and size changes) predicts forward mid moves well enough to skew the A-S reservation price. OFI is a vectorized computation over the whole book-update table in q, bucketed and regressed against forward returns using the same chronological train/test day split as the parameter sweep, held-out days reported only.
+
+Status: the tick database loader and the q edge-decomposition parity harness are landing now; the OFI study runs on top of them. Results will be reported here with the same discipline as everything above, held-out days only, negative results disclosed.
 
 ## Project history
 
